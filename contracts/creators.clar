@@ -24,6 +24,11 @@
 (define-constant ERR_INVALID_LICENSE_TERMS (err u120))
 (define-constant ERR_CREATOR_ONLY (err u121))
 (define-constant ERR_ROYALTY_TOO_HIGH (err u122))
+(define-constant ERR_INVALID_TITLE (err u123))
+(define-constant ERR_INVALID_DESCRIPTION (err u124))
+(define-constant ERR_INVALID_CONTENT_TYPE (err u125))
+(define-constant ERR_INVALID_METADATA_URL (err u126))
+(define-constant ERR_INVALID_LICENSE_TYPE (err u127))
 
 ;; Define the contract main variables
 (define-data-var revenue-pool uint u0)
@@ -98,6 +103,24 @@
 (define-private (is-valid-royalty (royalty uint))
   (<= royalty (var-get max-royalty-percent)))
 
+;; String validation helpers
+(define-private (is-valid-title (title (string-utf8 100)))
+  (and (> (len title) u0) (<= (len title) u100)))
+
+(define-private (is-valid-description (description (string-utf8 500)))
+  (and (> (len description) u0) (<= (len description) u500)))
+
+(define-private (is-valid-content-type (content-type (string-ascii 50)))
+  (and (> (len content-type) u0) (<= (len content-type) u50)))
+
+(define-private (is-valid-metadata-url (metadata-url (optional (string-utf8 256))))
+  (match metadata-url
+    url (and (> (len url) u0) (<= (len url) u256))
+    true))
+
+(define-private (is-valid-license-type (license-type (string-ascii 20)))
+  (and (> (len license-type) u0) (<= (len license-type) u20)))
+
 ;; Function to register new content
 (define-public (register-content 
     (content-hash (buff 32)) 
@@ -111,6 +134,10 @@
   (begin
     (asserts! (contract-not-paused) ERR_CONTRACT_PAUSED)
     (asserts! (is-valid-hash content-hash) ERR_INVALID_HASH_SIZE)
+    (asserts! (is-valid-title title) ERR_INVALID_TITLE)
+    (asserts! (is-valid-description description) ERR_INVALID_DESCRIPTION)
+    (asserts! (is-valid-content-type content-type) ERR_INVALID_CONTENT_TYPE)
+    (asserts! (is-valid-metadata-url metadata-url) ERR_INVALID_METADATA_URL)
     (asserts! (is-none (map-get? content-registry { content-hash: content-hash })) ERR_CONTENT_ALREADY_REGISTERED)
     (asserts! (>= license-fee (var-get minimum-license-fee)) ERR_MINIMUM_FEE_NOT_MET)
     (asserts! (is-valid-royalty royalty-percent) ERR_ROYALTY_TOO_HIGH)
@@ -142,6 +169,11 @@
   )
   (begin
     (asserts! (contract-not-paused) ERR_CONTRACT_PAUSED)
+    (asserts! (is-valid-hash content-hash) ERR_INVALID_HASH_SIZE)
+    (asserts! (is-valid-title title) ERR_INVALID_TITLE)
+    (asserts! (is-valid-description description) ERR_INVALID_DESCRIPTION)
+    (asserts! (is-valid-content-type content-type) ERR_INVALID_CONTENT_TYPE)
+    (asserts! (is-valid-metadata-url metadata-url) ERR_INVALID_METADATA_URL)
     (let (
       (content-data (unwrap! (map-get? content-registry { content-hash: content-hash }) ERR_CONTENT_NOT_FOUND))
       (creator (get creator content-data))
@@ -175,6 +207,9 @@
   )
   (begin
     (asserts! (contract-not-paused) ERR_CONTRACT_PAUSED)
+    (asserts! (is-valid-hash content-hash) ERR_INVALID_HASH_SIZE)
+    (asserts! (is-valid-license-type license-type) ERR_INVALID_LICENSE_TYPE)
+    (asserts! (is-valid-optional-hash terms-hash) ERR_INVALID_HASH_SIZE)
     (let (
       (caller tx-sender)
       (content-data (unwrap! (map-get? content-registry { content-hash: content-hash }) ERR_CONTENT_NOT_FOUND))
@@ -189,7 +224,6 @@
       (total-fee (+ license-fee platform-fee))
       (current-creator-earnings (default-to u0 (map-get? creator-earnings creator)))
     )
-      (asserts! (is-valid-optional-hash terms-hash) ERR_INVALID_HASH_SIZE)
       (asserts! (or (is-none existing-license) 
                    (not (is-license-valid (get expiry (unwrap! existing-license ERR_LICENSE_NOT_FOUND))))) 
                ERR_ALREADY_LICENSED)
@@ -233,6 +267,7 @@
 (define-public (renew-license (content-hash (buff 32)) (additional-period uint))
   (begin
     (asserts! (contract-not-paused) ERR_CONTRACT_PAUSED)
+    (asserts! (is-valid-hash content-hash) ERR_INVALID_HASH_SIZE)
     (let (
       (caller tx-sender)
       (license-key { content-hash: content-hash, licensee: caller })
@@ -311,6 +346,7 @@
 (define-public (transfer-license (content-hash (buff 32)) (new-licensee principal))
   (begin
     (asserts! (contract-not-paused) ERR_CONTRACT_PAUSED)
+    (asserts! (is-valid-hash content-hash) ERR_INVALID_HASH_SIZE)
     (asserts! (is-valid-principal new-licensee) ERR_INVALID_PRINCIPAL)
     (let (
       (caller tx-sender)
@@ -342,6 +378,7 @@
 ;; Function to check if a license has expired and update its status
 (define-public (check-license-status (content-hash (buff 32)) (licensee principal))
   (begin
+    (asserts! (is-valid-hash content-hash) ERR_INVALID_HASH_SIZE)
     (asserts! (is-valid-principal licensee) ERR_INVALID_PRINCIPAL)
     (let (
       (license-key { content-hash: content-hash, licensee: licensee })
